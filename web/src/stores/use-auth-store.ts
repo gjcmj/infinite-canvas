@@ -7,7 +7,7 @@ export type AuthStore = {
 
 /** 从运行期注入或 localStorage 读取 token */
 function readInitialToken(): string {
-    const injected = (window as Record<string, unknown>).__APP_CONFIG__ as Record<string, string> | undefined;
+    const injected = (window as unknown as Record<string, string | undefined>).__APP_CONFIG__;
     if (injected?.authToken) return injected.authToken;
     const envToken = import.meta.env.VITE_AUTH_TOKEN as string | undefined;
     if (envToken) return envToken;
