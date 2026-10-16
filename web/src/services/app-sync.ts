@@ -3,7 +3,7 @@ import localforage from "localforage";
 import i18n from "@/i18n";
 import { getMediaBlob, resolveMediaUrl, setMediaBlob } from "@/services/file-storage";
 import { getImageBlob, resolveImageUrl, setImageBlob } from "@/services/image-storage";
-import { downloadWebdavFile, uploadWebdavFile, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
+import { downloadWebdavFile, uploadWebdavFile, WEBDAV_MANIFEST_FILE_NAME } from "@/services/cloud-storage";
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { WebdavSyncConfig } from "@/stores/use-config-store";
