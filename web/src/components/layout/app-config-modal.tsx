@@ -134,7 +134,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
             message.error(error instanceof Error ? error.message : t("config.webdav.testFailed"));
         } finally {
             setTestingWebdav(false);
-
+        }
+    };
     const testCloud = async () => {
         if (!webdavReady) {
             message.error(t("config.cloud.missingUrl"));

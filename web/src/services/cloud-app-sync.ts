@@ -213,6 +213,7 @@ function mergeIndex(
         app: "infinite-canvas",
         domain: "canvas",
         version: 1,
+        exportedAt: new Date().toISOString(),
         projects: Array.from(mergedProjectMap.values()).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0)),
         deleted: Array.from(tombstoneMap.entries()).map(([id, deletedAt]) => ({ id, deletedAt })),
     };

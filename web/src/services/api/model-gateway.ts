@@ -107,7 +107,7 @@ export function isGatewayModel(modelValue: string): boolean {
 
 /** 获取网关基础 URL */
 function gatewayBaseUrl(): string {
-    const injected = (window as Record<string, unknown>).__APP_CONFIG__ as Record<string, string> | undefined;
+    const injected = (window as unknown as Record<string, string | undefined>).__APP_CONFIG__;
     if (injected?.gatewayUrl) return injected.gatewayUrl;
     const envUrl = import.meta.env.VITE_GATEWAY_URL;
     if (envUrl) return envUrl;
