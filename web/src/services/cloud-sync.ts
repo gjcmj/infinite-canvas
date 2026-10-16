@@ -2,7 +2,7 @@ import i18n from "@/i18n";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useConfigStore, type WebdavSyncConfig } from "@/stores/use-config-store";
-import { ensureGatewayChannel } from "@/services/api/model-gateway";
+import { ensureGatewayChannel, refreshGatewayModels } from "@/services/api/model-gateway";
 import { syncCanvasDomain, syncNonCanvasDomains } from "./cloud-app-sync";
 import type { CloudSyncResult } from "./cloud-app-sync";
 
@@ -26,8 +26,9 @@ let unsubscribeList: Array<() => void> = [];
 
 /** 初始化自动同步（在 app 启动时调用一次） */
 export function initCloudSync(): void {
-    // 确保 gateway 虚拟渠道存在
+    // 确保 gateway 虚拟渠道存在，并在已配置网关地址时后台刷新模型列表
     ensureGatewayChannel();
+    void refreshGatewayModels().catch(() => undefined);
 
     const trySubscribe = () => {
         const canvasHydrated = useCanvasStore.getState().hydrated;
@@ -125,10 +126,8 @@ async function syncOnStartup(): Promise<void> {
     const config = getSyncConfig();
     if (!config) return;
 
-    const { projects } = useCanvasStore.getState();
-    if (projects.length === 0) {
-        await doSync();
-    }
+    // 启动即同步一次：本地为空时拉取全部，本地非空时按 updatedAt 拉取远端较新的画布、补齐缺失媒体
+    await doSync();
 }
 
 async function doSync(): Promise<void> {

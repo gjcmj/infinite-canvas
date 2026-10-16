@@ -40,6 +40,7 @@ export function ConfigLocalProxy() {
                     </div>
                     <Switch checked={config.proxyEnabled} onChange={(checked) => updateConfig("proxyEnabled", checked)} />
                 </div>
+                <div className="mt-2 text-xs text-stone-500">{t("config.proxy.gatewayHint")}</div>
                 {config.proxyEnabled ? (
                     <>
                         <div className="mt-3 rounded-md bg-stone-100 px-3 py-2 dark:bg-stone-900">

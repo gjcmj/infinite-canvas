@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { useConfigStore } from "@/stores/use-config-store";
+
 export type AuthStore = {
     token: string;
     setToken: (token: string) => void;
@@ -25,4 +27,9 @@ export const useAuthStore = create<AuthStore>((set) => ({
 /** 供 cloud-storage / api 层读取当前 token 的快捷函数 */
 export function getAuthToken(): string {
     return useAuthStore.getState().token;
+}
+
+/** token 失效（401）时把用户带回云存储配置重新填写 */
+export function promptCloudAuth(): void {
+    useConfigStore.getState().openConfigDialog(false, "cloud");
 }

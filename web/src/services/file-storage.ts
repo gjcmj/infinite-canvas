@@ -2,6 +2,7 @@ import localforage from "localforage";
 import { nanoid } from "nanoid";
 
 import { withLocalProxy } from "@/stores/use-config-store";
+import { collectStorageKeysByPrefix } from "@/lib/storage-keys";
 
 export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number };
 
@@ -61,9 +62,7 @@ export async function cleanupUnusedMedia(usedData: unknown) {
 }
 
 export function collectMediaStorageKeys(value: unknown, keys = new Set<string>()) {
-    if (!value || typeof value !== "object") return keys;
-    if ("storageKey" in value && typeof value.storageKey === "string" && value.storageKey.includes(":")) keys.add(value.storageKey);
-    Object.values(value).forEach((item) => (Array.isArray(item) ? item.forEach((child) => collectMediaStorageKeys(child, keys)) : collectMediaStorageKeys(item, keys)));
+    collectStorageKeysByPrefix(value, ["video", "audio", "file", "video-reference", "audio-reference"]).forEach((key) => keys.add(key));
     return keys;
 }
 

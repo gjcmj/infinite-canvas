@@ -1,5 +1,5 @@
-import { getAuthToken } from "@/stores/use-auth-store";
-import { useConfigStore, type AiConfig, type ModelChannel, type ChannelModel } from "@/stores/use-config-store";
+import { getAuthToken, promptCloudAuth } from "@/stores/use-auth-store";
+import { useConfigStore, type AiConfig, type ModelCapability, type ModelChannel, type ChannelModel } from "@/stores/use-config-store";
 import type { ModelsResponse, ModelItem } from "@/types/api";
 
 // ============================================================
@@ -27,7 +27,10 @@ export async function fetchGatewayModels(): Promise<ModelItem[]> {
     });
 
     if (!response.ok) {
-        if (response.status === 401) throw new Error("认证失败，请检查 Token");
+        if (response.status === 401) {
+            promptCloudAuth();
+            throw new Error("认证失败，请检查 Token");
+        }
         throw new Error(`获取模型列表失败 (${response.status})`);
     }
 
@@ -64,7 +67,10 @@ export function getCachedGatewayModels(): ModelItem[] {
 export function ensureGatewayChannel(): ModelChannel {
     const { config, updateConfig } = useConfigStore.getState();
     const existing = config.channels.find((c) => c.id === GATEWAY_CHANNEL_ID);
-    if (existing) return existing;
+    if (existing) {
+        applyGatewayModelDefaults(existing.models);
+        return existing;
+    }
 
     const cachedModels = getCachedGatewayModels();
     const gatewayChannel: ModelChannel = {
@@ -79,6 +85,7 @@ export function ensureGatewayChannel(): ModelChannel {
     const newChannels = [gatewayChannel, ...config.channels];
     updateConfig("channels", newChannels);
     updateConfig("models", modelOptionsFromChannels(newChannels));
+    applyGatewayModelDefaults(gatewayChannel.models);
 
     return gatewayChannel;
 }
@@ -98,6 +105,34 @@ export async function refreshGatewayModels(): Promise<void> {
 
     updateConfig("channels", channels);
     updateConfig("models", modelOptionsFromChannels(channels));
+    applyGatewayModelDefaults(channelModels);
+}
+
+type ModelDefaultKey = "model" | "imageModel" | "videoModel" | "textModel" | "audioModel";
+
+const modelDefaultKeys: Array<[ModelDefaultKey, ModelCapability]> = [
+    ["model", "image"],
+    ["imageModel", "image"],
+    ["videoModel", "video"],
+    ["textModel", "text"],
+    ["audioModel", "audio"],
+];
+
+/** 用户尚未配置任何可用渠道时，把四域默认模型指向网关模型，实现「零配置只选模型」 */
+function applyGatewayModelDefaults(channelModels: ChannelModel[]) {
+    if (!channelModels.length) return;
+    const { config, updateConfig } = useConfigStore.getState();
+    // 已自带渠道(BYOK)的用户保持其默认模型不动
+    if (config.channels.some((channel) => channel.id !== GATEWAY_CHANNEL_ID && channel.apiKey.trim())) return;
+
+    modelDefaultKeys.forEach(([key, capability]) => {
+        const current = config[key];
+        if (isGatewayModel(current)) return;
+        const currentChannel = config.channels.find((channel) => channel.id === current.split("::")[0]);
+        if (currentChannel?.apiKey.trim()) return;
+        const fallback = channelModels.find((model) => model.capability === capability);
+        if (fallback) updateConfig(key, `${GATEWAY_CHANNEL_ID}::${fallback.name}`);
+    });
 }
 
 /** 判断模型是否走网关渠道 */
