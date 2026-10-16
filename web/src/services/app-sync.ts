@@ -4,6 +4,7 @@ import i18n from "@/i18n";
 import { getMediaBlob, resolveMediaUrl, setMediaBlob } from "@/services/file-storage";
 import { getImageBlob, resolveImageUrl, setImageBlob } from "@/services/image-storage";
 import { downloadWebdavFile, uploadWebdavFile, WEBDAV_MANIFEST_FILE_NAME } from "@/services/cloud-storage";
+import { collectStorageKeyList } from "@/lib/storage-keys";
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { WebdavSyncConfig } from "@/stores/use-config-store";
@@ -36,6 +37,8 @@ type DomainManifest<T> = {
 type SyncDomainOptions<T> = {
     key: DomainKey;
     label: string;
+    /** 该域由其他同步链路负责时跳过(云端改造后 canvas 域由 cloud-app-sync 独立同步) */
+    skip?: boolean;
     localData: () => Promise<T>;
     emptyData: T;
     mergeData: (local: T, remote: T) => T;
@@ -79,9 +82,8 @@ const FILE_CONCURRENCY = 3;
 const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
 const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
 type LogStore = typeof imageLogStore;
-const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-reference):/;
 
-export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?: AppSyncProgress): Promise<AppSyncResult> {
+export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?: AppSyncProgress, options?: { skipCanvas?: boolean }): Promise<AppSyncResult> {
     emitProgress(onProgress, { stage: "等待本地数据加载" });
     await Promise.all([waitForHydration(useCanvasStore), waitForHydration(useAssetStore)]);
 
@@ -89,6 +91,7 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
         syncDomain<CanvasDomainData>(config, onProgress, {
             key: "canvas",
             label: "画布",
+            skip: options?.skipCanvas,
             emptyData: { projects: [], deleted: [] },
             localData: async () => {
                 const { projects, deletedProjects } = useCanvasStore.getState();
@@ -141,6 +144,10 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
 
 async function syncDomain<T>(config: WebdavSyncConfig, onProgress: AppSyncProgress | undefined, options: SyncDomainOptions<T>): Promise<SyncDomainResult<T>> {
     try {
+        if (options.skip) {
+            emitProgress(onProgress, { domain: options.key, label: options.label, stage: "该域由其他同步链路负责", status: "success" });
+            return { data: options.emptyData, mergedRemote: false, files: 0, manifestBytes: 0, uploadedFiles: 0, uploadedBytes: 0 };
+        }
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "读取远端清单", status: "active" });
         const remoteManifest = await readDomainManifest(config, options.key, options.emptyData);
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "读取本地数据", status: "active" });
@@ -194,7 +201,7 @@ async function readDomainManifest<T>(config: WebdavSyncConfig, domain: DomainKey
 async function downloadMissingFiles<T>(config: WebdavSyncConfig, domain: DomainKey, data: T, remoteFiles: AppSyncFile[], onProgress?: AppSyncProgress) {
     const remoteFileMap = new Map(remoteFiles.map((item) => [item.storageKey, item]));
     const tasks: AppSyncFile[] = [];
-    const storageKeys = collectStorageKeys(data);
+    const storageKeys = collectStorageKeyList(data);
     let scanned = 0;
     for (const storageKey of storageKeys) {
         const localBlob = storageKey.startsWith("image:") ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
@@ -229,7 +236,7 @@ async function uploadChangedFiles<T>(config: WebdavSyncConfig, domain: DomainKey
     let uploadedFiles = 0;
     let uploadedBytes = 0;
 
-    const storageKeys = collectStorageKeys(data);
+    const storageKeys = collectStorageKeyList(data);
     let scanned = 0;
     for (const storageKey of storageKeys) {
         const blob = storageKey.startsWith("image:") ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
@@ -334,17 +341,6 @@ function mergeById<T extends { id?: string }>(local: T[], remote: T[], timeKey: 
         if (!current || getTime(item as Record<string, unknown>, timeKey) >= getTime(current as Record<string, unknown>, timeKey)) items.set(id, item);
     });
     return Array.from(items.values()).sort((a, b) => getTime(b as Record<string, unknown>, timeKey) - getTime(a as Record<string, unknown>, timeKey));
-}
-
-function collectStorageKeys(value: unknown, keys = new Set<string>()) {
-    if (typeof value === "string") {
-        if (storageKeyPattern.test(value)) keys.add(value);
-        return [...keys];
-    }
-    if (!value || typeof value !== "object") return [...keys];
-    if ("storageKey" in value && typeof value.storageKey === "string" && storageKeyPattern.test(value.storageKey)) keys.add(value.storageKey);
-    Object.values(value).forEach((item) => (Array.isArray(item) ? item.forEach((child) => collectStorageKeys(child, keys)) : collectStorageKeys(item, keys)));
-    return [...keys];
 }
 
 function domainPath(domain: DomainKey, path: string) {

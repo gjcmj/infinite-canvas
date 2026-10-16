@@ -16,7 +16,7 @@ import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent }
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { testWebdavConnection as testCloudConnection } from "@/services/cloud-storage";
-import { syncCanvasDomain } from "@/services/cloud-app-sync";
+import { syncCanvasDomain, syncNonCanvasDomains } from "@/services/cloud-app-sync";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaScaleOptions, parseVideoResolution } from "@/lib/media-size";
 import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
@@ -161,6 +161,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         setCloudSyncStatus(t("config.cloud.preparing"));
         try {
             const result = await syncCanvasDomain(webdav);
+            await syncNonCanvasDomains(webdav);
             updateWebdavConfig("lastSyncedAt", result.syncedAt);
             setCloudSyncStatus(t("config.cloud.completed"));
             message.success(t("config.cloud.syncCompleted"));

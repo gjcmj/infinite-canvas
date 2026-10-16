@@ -1,4 +1,4 @@
-import { getAuthToken } from "@/stores/use-auth-store";
+import { getAuthToken, promptCloudAuth } from "@/stores/use-auth-store";
 import type { WebdavSyncConfig } from "@/stores/use-config-store";
 import type { StorageHealthResponse, StorageUploadResponse } from "@/types/api";
 
@@ -11,9 +11,8 @@ export const WEBDAV_MANIFEST_FILE_NAME = "manifest.json";
 const REQUEST_TIMEOUT_MS = 120000;
 
 // ─── Mock 开关 ──────────────────────────────────────────────
-// 后端 API 就绪前设为 true，走本地模拟数据
-// 通过环境变量 VITE_CLOUD_MOCK 控制，默认 true
-const MOCK = import.meta.env.VITE_CLOUD_MOCK !== "false";
+// 默认直连真实后端；仅在显式设置 VITE_CLOUD_MOCK=true 时走内存模拟数据
+const MOCK = import.meta.env.VITE_CLOUD_MOCK === "true";
 // ─── 工具函数 ───────────────────────────────────────────────
 
 function buildUrl(config: WebdavSyncConfig, path: string): string {
@@ -42,7 +41,10 @@ async function cloudFetch(url: string, init: RequestInit = {}): Promise<Response
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-        return await fetch(url, { ...init, headers, signal: controller.signal });
+        const response = await fetch(url, { ...init, headers, signal: controller.signal });
+        // token 失效时引导用户回到云存储配置重新填写
+        if (response.status === 401) promptCloudAuth();
+        return response;
     } catch (error) {
         if (error instanceof Error && error.name === "AbortError") throw new Error("请求超时");
         if (error instanceof TypeError) throw new Error("连接失败");
