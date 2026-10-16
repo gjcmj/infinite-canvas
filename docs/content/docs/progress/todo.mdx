@@ -7,3 +7,4 @@ description: Planned follow-up work
 
 - Replace the Claude Code CLI adapter with a Claude Agent SDK adapter and improve the tool queue, following the [Local Agent Integration Plan](/docs/progress/local-agent-integration-plan).
 - Add Skill installation from web search, Skill resource-file management, and controlled local-memory persistence.
+- Implement the direct-store enhancements from the cloud plan: let `resolveImageUrl` / `resolveMediaUrl` fall back to the cloud URL when the local blob is missing, reuse server-stored generation results (`storageKey` / `path` in task responses) so browser download and re-upload can be skipped, and switch already-uploaded references to `image_ref[]`.
