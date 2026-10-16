@@ -64,6 +64,10 @@ export type WebdavSyncConfig = {
     password: string;
     directory: string;
     lastSyncedAt: string;
+    /** 是否启用自动同步 */
+    autoSync: boolean;
+    /** 自动同步间隔(毫秒) */
+    syncInterval: number;
 };
 export type ConfigTabKey = "channels" | "local-proxy" | "preferences" | "prompt-sources" | "webdav" | "local-storage";
 
@@ -133,6 +137,8 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
     password: "",
     directory: "infinite-canvas",
     lastSyncedAt: "",
+    autoSync: true,
+    syncInterval: 30000,
 };
 
 type ConfigStore = {
@@ -208,8 +214,10 @@ export function resolveModelScript(config: AiConfig, value: string) {
 }
 
 function isAiConfigReady(config: AiConfig, model: string) {
-    const match = findChannelModel(config, model);
-    return Boolean(match && match.channel.baseUrl.trim() && match.channel.apiKey.trim());
+    const channel = resolveModelChannel(config, model);
+    // gateway 渠道跳过 apiKey 非空校验（token 由 use-auth-store 管理）
+    if (channel.id === "gateway") return Boolean(model.trim() && channel.baseUrl.trim());
+    return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
 }
 
 export const useConfigStore = create<ConfigStore>()(

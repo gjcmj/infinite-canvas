@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { fetchChannelModels } from "@/services/api/image";
+import { refreshGatewayModels } from "@/services/api/model-gateway";
+import { useConfigStore } from "@/stores/use-config-store";
 import type { ModelChannel } from "@/stores/use-config-store";
 
 // Channel model selector: fetch upstream models or add them manually, then include checked models in the channel list.
@@ -61,6 +63,23 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
 
     const fetchModels = async () => {
         if (!channel) return;
+        // gateway 渠道走网关刷新
+        if (channel.id === "gateway") {
+            setLoading(true);
+            try {
+                await refreshGatewayModels();
+                const gwChannel = useConfigStore.getState().config.channels.find((c) => c.id === "gateway");
+                const models = gwChannel?.models.map((m) => m.name) || [];
+                setFetched(models);
+                setActiveTab("new");
+                message.success(t("config.modelSelect.fetched", { count: models.length }));
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : t("config.modelSelect.fetchFailed"));
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
         if (!channel.baseUrl.trim() || !channel.apiKey.trim()) {
             message.error(t("config.modelSelect.missingConfig"));
             return;

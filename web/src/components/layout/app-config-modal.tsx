@@ -15,9 +15,12 @@ import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
+import { testWebdavConnection as testCloudConnection } from "@/services/cloud-storage";
+import { syncCanvasDomain } from "@/services/cloud-app-sync";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaScaleOptions, parseVideoResolution } from "@/lib/media-size";
 import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
+import { useAuthStore } from "@/stores/use-auth-store";
 type ModelGroup = {
     capability: ModelCapability;
     modelKey: "imageModel" | "videoModel" | "textModel" | "audioModel";
@@ -59,6 +62,9 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const [syncingWebdav, setSyncingWebdav] = useState(false);
     const [webdavSyncStatus, setWebdavSyncStatus] = useState("");
     const [webdavDomainProgress, setWebdavDomainProgress] = useState(createWebdavDomainProgress);
+    const [testingCloud, setTestingCloud] = useState(false);
+    const [syncingCloud, setSyncingCloud] = useState(false);
+    const [cloudSyncStatus, setCloudSyncStatus] = useState("");
     const config = useConfigStore((state) => state.config);
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
@@ -128,6 +134,40 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
             message.error(error instanceof Error ? error.message : t("config.webdav.testFailed"));
         } finally {
             setTestingWebdav(false);
+
+    const testCloud = async () => {
+        if (!webdavReady) {
+            message.error(t("config.cloud.missingUrl"));
+            return;
+        }
+        setTestingCloud(true);
+        try {
+            await testCloudConnection(webdav);
+            message.success(t("config.cloud.available"));
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : t("config.cloud.testFailed"));
+        } finally {
+            setTestingCloud(false);
+        }
+    };
+
+    const syncCloud = async () => {
+        if (!webdavReady) {
+            message.error(t("config.cloud.missingUrl"));
+            return;
+        }
+        setSyncingCloud(true);
+        setCloudSyncStatus(t("config.cloud.preparing"));
+        try {
+            const result = await syncCanvasDomain(webdav);
+            updateWebdavConfig("lastSyncedAt", result.syncedAt);
+            setCloudSyncStatus(t("config.cloud.completed"));
+            message.success(t("config.cloud.syncCompleted"));
+        } catch (error) {
+            setCloudSyncStatus(error instanceof Error ? error.message : t("config.cloud.failed"));
+            message.error(error instanceof Error ? error.message : t("config.cloud.failed"));
+        } finally {
+            setSyncingCloud(false);
         }
     };
 
@@ -195,22 +235,53 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                     </Button>
                                 </div>
                                 <div className="space-y-2">
-                                    {config.channels.map((channel) => (
-                                        <div key={channel.id} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-4 py-3 dark:border-stone-800">
-                                            <div className="min-w-0">
-                                                <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
-                                                <div className="mt-1 truncate text-xs text-stone-500">
-                                                    {apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
+                                    {config.channels.map((channel) =>
+                                        channel.id === "gateway" ? (
+                                            // gateway 渠道特殊展示：不可编辑/删除，只显示模型数+刷新
+                                            <div key={channel.id} className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50/30 px-4 py-3 dark:border-blue-800 dark:bg-blue-950/20">
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-2 text-sm font-semibold">
+                                                        <Cloud className="size-4 text-blue-500" />
+                                                        {channel.name}
+                                                    </div>
+                                                    <div className="mt-1 text-xs text-stone-500">
+                                                        {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    size="small"
+                                                    icon={<RefreshCw className="size-3.5" />}
+                                                    onClick={async () => {
+                                                        try {
+                                                            const { refreshGatewayModels } = await import("@/services/api/model-gateway");
+                                                            await refreshGatewayModels();
+                                                            message.success(t("config.modelSelect.fetched", { count: channel.models.length }));
+                                                        } catch (error) {
+                                                            message.error(error instanceof Error ? error.message : t("config.modelSelect.fetchFailed"));
+                                                        }
+                                                    }}
+                                                >
+                                                    {t("config.modelSelect.fetch")}
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            // 自定义渠道：可编辑/删除
+                                            <div key={channel.id} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-4 py-3 dark:border-stone-800">
+                                                <div className="min-w-0">
+                                                    <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
+                                                    <div className="mt-1 truncate text-xs text-stone-500">
+                                                        {apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
+                                                    </div>
+                                                </div>
+                                                <div className="flex shrink-0 gap-2">
+                                                    <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
+                                                        {t("common.edit")}
+                                                    </Button>
+                                                    <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
                                                 </div>
                                             </div>
-                                            <div className="flex shrink-0 gap-2">
-                                                <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
-                                                    {t("common.edit")}
-                                                </Button>
-                                                <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
-                                            </div>
-                                        </div>
-                                    ))}
+                                        ),
+                                    )}
                                 </div>
                             </div>
                         ),
@@ -300,6 +371,61 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                         key: "prompt-sources",
                         label: t("config.tabs.promptSources"),
                         children: <ConfigPromptSources />,
+                    },
+                    {
+                        key: "cloud",
+                        label: t("config.cloud.title"),
+                        children: (
+                            <Form layout="vertical" requiredMark={false}>
+                                <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                                    <div className="mb-3 flex items-center gap-2">
+                                        <Cloud className="size-4 text-blue-500" />
+                                        <span className="text-sm font-semibold">{t("config.cloud.title")}</span>
+                                    </div>
+                                    <div className="mb-3 text-xs text-stone-500">{t("config.cloud.description")}</div>
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        <Form.Item label={t("config.cloud.gatewayUrl")} extra={t("config.cloud.gatewayUrlDescription")} className="mb-4">
+                                            <Input
+                                                value={webdav.url}
+                                                placeholder="https://cloud.example.com"
+                                                onChange={(event) => updateWebdavConfig("url", event.target.value)}
+                                            />
+                                        </Form.Item>
+                                        <Form.Item label={t("config.cloud.token")} extra={t("config.cloud.tokenDescription")} className="mb-4">
+                                            <Input.Password
+                                                value={""}
+                                                onChange={(event) => {
+                                                    useAuthStore.getState().setToken(event.target.value);
+                                                }}
+                                            />
+                                        </Form.Item>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <Form.Item label={t("config.cloud.autoSync")} className="mb-0">
+                                            <Switch
+                                                checked={webdav.autoSync}
+                                                onChange={(checked) => updateWebdavConfig("autoSync", checked)}
+                                            />
+                                        </Form.Item>
+                                        <span className="text-xs text-stone-500">{t("config.cloud.autoSyncDescription")}</span>
+                                    </div>
+                                    <div className="mt-3 text-xs text-stone-500">
+                                        {webdav.lastSyncedAt
+                                            ? t("config.cloud.lastSynced", { time: formatWebdavTime(webdav.lastSyncedAt, locale) })
+                                            : t("config.cloud.neverSynced")}
+                                    </div>
+                                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                                        <Button icon={<Wifi className="size-4" />} disabled={!webdavReady || syncingCloud} loading={testingCloud} onClick={() => void testCloud()}>
+                                            {t("config.cloud.test")}
+                                        </Button>
+                                        <Button type="primary" icon={<RefreshCw className="size-4" />} disabled={!webdavReady || testingCloud} loading={syncingCloud} onClick={() => void syncCloud()}>
+                                            {t(syncingCloud ? "config.cloud.syncing" : "config.cloud.syncNow")}
+                                        </Button>
+                                        {cloudSyncStatus ? <span className="text-xs text-stone-500">{cloudSyncStatus}</span> : null}
+                                    </div>
+                                </section>
+                            </Form>
+                        ),
                     },
                     {
                         key: "webdav",
