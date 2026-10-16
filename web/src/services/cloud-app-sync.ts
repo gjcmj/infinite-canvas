@@ -323,7 +323,13 @@ function fileExtension(mimeType: string, storageKey: string) {
 async function readFilesManifest(config: WebdavSyncConfig): Promise<CanvasFileRecord[]> {
     const manifest = await readRemoteJson<CanvasFilesManifest>(config, filesFilePath());
     if (!manifest || !Array.isArray(manifest.files)) return [];
-    return manifest.files.filter((item) => item && typeof item.storageKey === "string" && isStorageKey(item.storageKey) && typeof item.path === "string");
+    const byKey = new Map<string, CanvasFileRecord>();
+    manifest.files.forEach((item) => {
+        // 同一 storageKey 只保留第一条：清单出现重复条目时，hasSameFiles 会恒为 false 导致每轮重复写入清单
+        if (!item || typeof item.storageKey !== "string" || !isStorageKey(item.storageKey) || typeof item.path !== "string" || byKey.has(item.storageKey)) return;
+        byKey.set(item.storageKey, item);
+    });
+    return [...byKey.values()];
 }
 
 /** 本地缺失的媒体从远端补齐 */
